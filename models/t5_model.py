@@ -1,11 +1,12 @@
-from transformers import T5Tokenizer, T5ForConditionalGeneration
-class T5Model:
-    def __init__(self, model_name="t5-base"):
-        self.tokenizer = T5Tokenizer.from_pretrained(model_name)
-        self.model = T5ForConditionalGeneration.from_pretrained(model_name)
+import requests
+import json
+class OllamaModel:
+    def __init__(self, model_name="llama3.2:3b"):
+        self.model_name = model_name
+        self.api_url = "http://localhost:11434/api/chat"  # Default Ollama API endpoint
 
     def generate_structured_data(self, text, section_name):
-        # Define prompts based on the section name
+    # Define prompts based on the section name
         if section_name == "EDUCATION":
             prompt = (
                 f"Extract the education details from the following CV section. "
@@ -39,20 +40,37 @@ class T5Model:
                 f"Skills:\n- [Skill 1]\n- [Skill 2]\n"
             )
         else:
-            # Default prompt for unrecognized sections
+            # Default case for unsupported sections
             prompt = (
-                f"Extract the following fields from the CV section and organize them into categories:\n\n"
+                f"Analyze the following CV section and extract relevant information:\n\n"
                 f"Input:\n{text}\n\n"
                 f"Output format:\n"
-                f"Fields:\n- [Field 1]\n- [Field 2]\n"
+                f"- [Extracted Information]\n"
             )
 
-        # Tokenize the prompt and generate output
-        inputs = self.tokenizer(prompt, return_tensors="pt", max_length=1024, truncation=True)
-        outputs = self.model.generate(inputs.input_ids, max_length=1024, num_beams=4, early_stopping=True)
-        result = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-        return result
+        # Send the prompt to the Ollama API
+        response = requests.post(
+            self.api_url,
+            json={"model": self.model_name, "messages": [{"role": "user", "content": prompt}]},
+            stream=True  # Enable streaming
+        )
 
+        if response.status_code == 200:
+            try:
+                # Collect the streamed response content
+                content = ""
+                for line in response.iter_lines():
+                    if line:  # Skip empty lines
+                        line_data = json.loads(line.decode("utf-8"))
+                        message = line_data.get("message", {}).get("content", "")
+                        content += message
+
+                return content.strip()  # Return the full content
+            except Exception as e:
+                raise Exception(f"Failed to parse streaming response: {e}, Raw response: {response.text}")
+        else:
+            raise Exception(f"Error: {response.status_code}, {response.text}")
+    
     def split_cv_into_sections(self, cv_text):
         sections = {}
         current_section = None
@@ -75,3 +93,161 @@ class T5Model:
         for section_name, section_text in sections.items():
             structured_data[section_name] = self.generate_structured_data(section_text, section_name)
         return structured_data
+
+    # CV Improvement Methods
+    def improve_cv(self, cv_data):
+        """
+        Improve the CV by enhancing content and generating suggestions.
+        :param cv_data: A dictionary containing structured CV data.
+        :return: A dictionary with improved CV content and suggestions.
+        """
+        improved_cv = {}
+        for section_name, section_text in cv_data.items():
+            # Step 1: Correct grammar and spelling
+            corrected_text = self.correct_grammar(section_text)
+
+            # Step 2: Enhance vague descriptions
+            enhanced_text = self.enhance_description(corrected_text)
+
+            # Step 3: Add suggestions for improvement
+            suggestions = self.generate_suggestions(section_name, enhanced_text)
+
+            # Combine the improved content and suggestions
+            improved_cv[section_name] = {
+                "content": enhanced_text,
+                "suggestions": suggestions
+            }
+
+        # Add a summary of overall improvements
+        overall_suggestions = self.generate_overall_suggestions(improved_cv)
+        improved_cv["summary"] = overall_suggestions
+
+        return improved_cv
+
+
+    def correct_grammar(self, text):
+        """
+        Correct grammar and spelling in the given text.
+        :param text: The input text.
+        :return: The corrected text.
+        """
+        # Use Ollama to correct grammar
+        prompt = f"Correct the grammar and spelling in the following text:\n{text}"
+        response = requests.post(
+            self.api_url,
+            json={"model": self.model_name, "messages": [{"role": "user", "content": prompt}]},
+            stream=True  # Enable streaming
+        )
+
+        if response.status_code == 200:
+            try:
+                # Collect the streamed response content
+                content = ""
+                for line in response.iter_lines():
+                    if line:  # Skip empty lines
+                        line_data = json.loads(line.decode("utf-8"))
+                        message = line_data.get("message", {}).get("content", "")
+                        content += message
+
+                return content.strip()  # Return the full content
+            except Exception as e:
+                raise Exception(f"Failed to parse streaming response: {e}, Raw response: {response.text}")
+        else:
+            raise Exception(f"Error: {response.status_code}, {response.text}")
+
+    def enhance_description(self, text):
+        """
+        Enhance vague descriptions in the CV.
+        :param text: The input text.
+        :return: The enhanced text.
+        """
+        # Use Ollama to rewrite vague descriptions
+        prompt = f"Improve the following CV description:\n{text}"
+        response = requests.post(
+            self.api_url,
+            json={"model": self.model_name, "messages": [{"role": "user", "content": prompt}]},
+            stream=True  # Enable streaming
+        )
+
+        if response.status_code == 200:
+            try:
+                # Collect the streamed response content
+                content = ""
+                for line in response.iter_lines():
+                    if line:  # Skip empty lines
+                        line_data = json.loads(line.decode("utf-8"))
+                        message = line_data.get("message", {}).get("content", "")
+                        content += message
+
+                return content.strip()  # Return the full content
+            except Exception as e:
+                raise Exception(f"Failed to parse streaming response: {e}, Raw response: {response.text}")
+        else:
+            raise Exception(f"Error: {response.status_code}, {response.text}")
+
+    def generate_suggestions(self, section_name, text):
+        """
+        Generate improvement suggestions for a CV section.
+        :param section_name: The name of the CV section.
+        :param text: The content of the section.
+        :return: A list of suggestions.
+        """
+        suggestions = []
+
+        if section_name == "EDUCATION":
+            # Check if degree details are missing
+            if not any(keyword in text.lower() for keyword in ["bachelor", "master", "phd", "degree", "diploma"]):
+                suggestions.append("Consider adding your degree details (e.g., Bachelor of Science in Computer Science).")
+            # Check if institution details are missing
+            if not any(keyword in text.lower() for keyword in ["university", "college", "institute", "school"]):
+                suggestions.append("Include the name of the institution where you studied.")
+
+        elif section_name == "PROFESSIONAL EXPERIENCE":
+            # Check for measurable achievements
+            if not any(keyword in text.lower() for keyword in ["increased", "reduced", "improved", "achieved", "led"]):
+                suggestions.append("Add measurable achievements (e.g., 'Increased sales by 20%' or 'Led a team of 5 developers').")
+            # Check for action verbs
+            if not any(keyword in text.lower() for keyword in ["developed", "managed", "designed", "implemented", "collaborated"]):
+                suggestions.append("Use action verbs to describe your responsibilities (e.g., 'Developed a web application').")
+
+        elif section_name == "SKILLS":
+            # Suggest adding technical or industry-specific keywords
+            if len(text.split()) < 5:  # If the skills section is too short
+                suggestions.append("Expand your skills section with relevant technical or industry-specific keywords.")
+            suggestions.append("Consider adding skills like 'problem-solving', 'teamwork', or 'communication' if applicable.")
+
+        elif section_name == "CERTIFICATES":
+            # Check if certificates are listed
+            if len(text.strip()) == 0:
+                suggestions.append("Add certifications relevant to your field (e.g., 'AWS Certified Solutions Architect').")
+
+        else:
+            # Default suggestion for unrecognized sections
+            suggestions.append("Ensure this section is complete and relevant to your CV.")
+
+        return suggestions
+    def generate_overall_suggestions(self, improved_cv):
+        """
+        Generate overall suggestions for the CV based on all sections.
+        :param improved_cv: The improved CV data.
+        :return: A list of overall suggestions.
+        """
+        overall_suggestions = []
+
+        # Check if all sections are present
+        required_sections = ["EDUCATION", "PROFESSIONAL EXPERIENCE", "CERTIFICATES", "SKILLS"]
+        missing_sections = [section for section in required_sections if section not in improved_cv]
+        if missing_sections:
+            overall_suggestions.append(f"Consider adding the following missing sections: {', '.join(missing_sections)}.")
+
+        # Check for consistency in dates
+        for section_name, section_data in improved_cv.items():
+            if section_name in ["EDUCATION", "PROFESSIONAL EXPERIENCE"]:
+                content = section_data.get("content", "")
+                if "Dates" not in content:
+                    overall_suggestions.append(f"Ensure that all entries in the {section_name} section include dates.")
+
+        # Add a general suggestion
+        overall_suggestions.append("Ensure the CV is tailored to the specific job you are applying for.")
+
+        return overall_suggestions
